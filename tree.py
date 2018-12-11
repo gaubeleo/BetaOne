@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import numpy as np
+
 from hearts_helpers import eval_trick
 from constants import *
 
@@ -30,6 +32,13 @@ class Node:
 		self.player_values = []
 		self.best_actions = None
 
+		self.X = None
+		self.Y_actions = None
+		self.Y_values = None
+
+		self.solved = False
+		self.training_samples = False
+
 	def solve(self):
 		for c in self.legal_cards:
 			sim_state, next_values, next_i, next_p, next_trick = self.sim_action(c)
@@ -38,6 +47,8 @@ class Node:
 				assert(len(self.cards) == 1 and len(self.legal_cards) == 1)
 
 				self.best_actions = [0]
+
+				self.solved = True
 				return next_values, 0
 			else:
 				child = Node(sim_state, values=next_values, i=next_i, p=next_p, trick=next_trick)
@@ -55,7 +66,10 @@ class Node:
 
 		#return the outcome of the game if every player plays (the first) nash equilibrium
 		self.best_actions = [a for a in range(len(self.legal_cards)) if self.player_values[a] == min(self.player_values)]
+
+		self.solved = True
 		return self.children_values[self.best_actions[0]], self.best_actions
+
 
 	def sim_action(self, c):
 		global PLAYERS
@@ -86,26 +100,43 @@ class Node:
 
 		return sim_state, next_values, self.i+1, next_p, next_trick
 
+	def build_training_samples(self):
+		assert(self.solved)
+
+		if (not self.training_samples):
+			X = self.state.reshape(1, self.state.shape[0])
+			
+			# illeagal move --> 0 | legal move --> 0.5 | best moves --> 1.
+			Y_actions = np.zeros((1, NUM_CARDS))
+			for c in self.legal_cards:
+				Y_actions[0, c] = 0.5
+			for a in self.best_actions:
+				Y_actions[0, self.legal_cards[a]] = 1.
+
+			Y_values = np.array([[self.values[self.p]]])
+
+			#accumulate training samples recursively
+			for child in self.children:
+				x, y_actions, y_values = child.build_training_samples()
+				X = np.concatenate((X, x), axis=0)
+				Y_actions = np.concatenate((Y_actions, y_actions), axis=0)
+				Y_values = np.concatenate((Y_values, y_values), axis=0)
+
+			self.X = X
+			self.Y_actions = Y_actions
+			self.Y_values = Y_values
+
+			self.training_samples = True
+
+		return self.X, self.Y_actions, self.Y_values
+
 	def __str__(self):
-		s = "Player %i:\t%i"%(self.p, self.values[self.p]) 
+		s = "P%i:\t%i"%(self.p, self.values[self.p]) 
 		s += "\t|\t{" + " ".join([CARDS[c] for c in self.cards]) + "}"
 
-		if self.legal_cards:
-			s += "\t|\t" + CARDS[self.legal_cards[self.best_actions[0]]]
+		#if self.legal_cards:
+		s += "\t|\t" + CARDS[self.legal_cards[self.best_actions[0]]]
 
 		if self.children:
 			s += "\n"+str(self.children[self.best_actions[0]])
 		return s
-
-
-#class Leaf(Node):
-#	def __init__(self, state, values, i, p, trick):
-#		Node.__init__(self, state, values=values, i=i, p=p, trick=trick)
-#
-#		assert(len(self.cards) == 1 and len(self.legal_cards) == 1)
-#
-#	def solve(self):
-#		self.sim_action
-#
-#		return self.children_values
-

@@ -6,7 +6,7 @@ import numpy as np
 
 from random import shuffle, choice, random
 
-from tree import Node#, Leaf
+from tree import Node
 from beta_one import BetaZero, BetaOne
 from hearts_helpers import eval_trick, Player
 
@@ -14,28 +14,37 @@ from constants import *
 
 
 
-#AI = BetaZero()
+AI = BetaOne()
 PLAYERS = map(Player, PLAYER_NAMES[:NUM_PLAYERS])
 #num_players = 3
 
 DECK = range(NUM_CARDS)
 
-GAME_STATE = np.zeros(NUM_CARDS *  (NUM_PLAYERS + NUM_CARDS))
+GAME_STATE = np.zeros(NUM_CARDS * (NUM_PLAYERS + NUM_CARDS))
 
 
 def setup():
-	for game in range(1):
-		print "NEW GAME: "
+	deal()
+	test_root = solve()
+	reset()
+
+	for game in range(10):
+		#print "NEW GAME: "
 
 		deal()
-		play()
-		#eval_game()
+		root = solve()
+		#play()
+		train(root)
+		if game%10 == 0:
+			test(test_root)
 
 		reset()
 
-		print 
-		print "#########################################"
-		print 
+		#print 
+		#print "#########################################"
+		#print 
+
+
 
 
 def deal():
@@ -51,18 +60,35 @@ def deal():
 		p.sort()
 
 	#assert same output
-	print_state(GAME_STATE)
+	#print_state(GAME_STATE)
 
-def play(exploitation=0.25):
+def solve():
+	root = Node(GAME_STATE.copy(), i=0, p=0)
+	root.solve()
+
+	return root
+
+def train(root):
+	X, Y_actions, Y_values = root.build_training_samples()
+
+	#print X.shape
+	#print Y_actions.shape
+	#print Y_values.shape
+
+	AI.train_PI(X, Y_actions)
+
+def test(test_root):
+	X_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
+	print AI.test_PI(X_test, Y_actions_test)
+
+def play(exploitation=1.):
 	p = 0
-	r = Node(GAME_STATE.copy(), i=0, p=p)
-	r.solve()
 
 	for i in range(len(DECK)):
 		augmented_game_state = GAME_STATE[p*NUM_CARDS:(p+1)*NUM_CARDS]
 		if random() < exploitation:
-			PI_features = AI.predict_features(augmented_game_state)
-			predicted_features = AI.predict_features(augmented_game_state)
+			#PI_features = AI.predict_features(augmented_game_state)
+			#predicted_features = AI.predict_features(augmented_game_state)
 			AI.feed(predicted_game_state)
 
 		c = PLAYERS[p].play(GAME_STATE)
@@ -77,10 +103,14 @@ def play(exploitation=0.25):
 
 
 def reset():
+	global GAME_STATE 
+
 	for p in PLAYERS:
 		p.reset()
 
 	PLAYERS.append(PLAYERS.pop(0))
+
+	GAME_STATE = np.zeros(NUM_CARDS * (NUM_PLAYERS + NUM_CARDS))
 
 
 def print_state(s):

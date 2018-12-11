@@ -28,3 +28,5 @@ NUM_PLAYERS = 3
 PLAYER_NAMES = ["Flo", "Tim", "Leo", "Max", "Ami", "Philipp", "Freddi"]
 
 assert(NUM_PLAYERS <= len(PLAYER_NAMES))
+
+NUM_FEATURES = NUM_CARDS * (NUM_CARDS + NUM_PLAYERS) // NUM_RANKS #TODO --> AUTO_ML
