@@ -4,16 +4,41 @@
 
 import random
 import numpy as np
-#import keras
+
+from keras.models import Sequential
+from keras.layers import Dense
 
 
 class BetaOne:
 	def __init__(self, state_size, action_size):
+		self.build_layers()
+		self.build_models()
+
+	def build_layers(self):
+		self.PI_gs_layer = Dense(len(CARDS) * POS_POS)
+		self.II_gs_layer = Dense(len(CARDS) * (len(CARDS) + 1))
+
+		self.feature_layer = Dense(len(CARDS) * POS_POS / len(RANKS))
+		self.action_layer = Dense(len(CARDS))
+
+	def build_models(self):
+		self.PI_model = Sequential()
+		self.II_model = Sequential()
+		
+		self.PI_model.add(self.PI_gs_layer)
+		self.II_model.add(self.II_gs_layer)
+
+		self.PI_model.add(self.feature_layer)
+		self.II_model.add(self.feature_layer)
+
+		self.PI_model.add(self.action_layer)
+		self.II_model.add(self.action_layer)
+
+		self.PI_model.compile()
+		self.II_model.compile()
+
+	def feed(self):
 		pass
-
-	def evaluate(self, state, actions):
-		return random.choice(action)
-
 
 class BetaZero:
 	def __init__(self, state_size, action_size, lr=0.1, df=0.9): 
