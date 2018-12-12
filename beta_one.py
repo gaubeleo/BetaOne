@@ -6,8 +6,8 @@ import sys
 stderr = sys.stderr
 sys.stderr = open(os.devnull, 'w')
 
-from keras.models import Sequential
-from keras.layers import Dense
+from keras.models import Model
+from keras.layers import Dense, Input, concatenate
 
 sys.stderr = stderr
 
@@ -20,48 +20,66 @@ from constants import *
 
 class BetaOne:
 	def __init__(self):
-		self.build_layers()
 		self.build_models()
 
-	def build_layers(self):
-		#convolutional layers?! chess paper?
-		self.PI_gs_layer = Dense(NUM_CARDS * (NUM_CARDS + NUM_PLAYERS))
-		self.II_gs_layer = Dense(NUM_CARDS * (NUM_CARDS + 1))
-
-		#TODO --> intermediate layer
-		self.PI_int_layer = Dense(NUM_CARDS * (NUM_CARDS + NUM_PLAYERS)*2)
-
-		self.feature_layer = Dense(NUM_FEATURES)
-		self.action_layer = Dense(NUM_CARDS)
-
 	def build_models(self):
-		self.PI_model = Sequential()
-		self.II_model = Sequential()
+		#batch_size=...
+		II_input_dim = NUM_CARDS * (NUM_CARDS + 1)
+		PI_input_dim = NUM_CARDS * (NUM_PLAYERS-1)
+
+		#print II_input_dim, PI_input_dim
+
+		II_input_layer = Input(shape=(II_input_dim,), name="II_inputs")
+		PI_input_layer = Input(shape=(PI_input_dim,), name="PI_inputs")
 		
-		self.PI_model.add(self.PI_gs_layer)
-		self.II_model.add(self.II_gs_layer)
-
 		#TODO --> intermediate layer
-		#self.PI_model.add(self.PI_int_layer)
 
-		self.PI_model.add(self.feature_layer)
-		self.II_model.add(self.feature_layer)
+		II_feature_layer = Dense(NUM_FEATURES, activation="tanh", name="II_features")(II_input_layer)
+		PI_feature_layer = Dense(NUM_FEATURES, activation="tanh", name="PI_features")(PI_input_layer)
 
-		self.PI_model.add(self.action_layer)
-		self.II_model.add(self.action_layer)
 
-		self.PI_model.compile(loss='mean_squared_error', optimizer='sgd')
+		#merge_features = concatenate([II_input_layer, PI_input_layer])
+		merge_features = concatenate([II_feature_layer, PI_feature_layer])
+
+		II_action_layer = Dense(NUM_CARDS, activation="relu", name="II_actions")(II_feature_layer)
+		PI_action_layer = Dense(NUM_CARDS, activation="relu", name="PI_actions")(merge_features)
+
+
+		self.II_model = Model(inputs=II_input_layer, outputs=II_action_layer)
+		self.PI_model = Model(inputs=[II_input_layer, PI_input_layer], outputs=PI_action_layer)
+
 		self.II_model.compile(loss='mean_squared_error', optimizer='sgd')
+		self.PI_model.compile(loss='mean_squared_error', optimizer='sgd')
 
-	def train_PI(self, X, Y):
-		train_results = train(self.PI_model, X, Y)
+	def train_PI(self, X_II, X_PI, Y):
+		train_results = train(self.PI_model, [X_II, X_PI], Y)
 
 		return train_results
 
-	def test_PI(self, X, Y):
-		test_results = test(self.PI_model, X, Y)
+	def test_PI(self, X_II, X_PI, Y):
+		test_results = test(self.PI_model, [X_II, X_PI], Y)
 
 		return test_results
+
+	def predict_PI(self, X_II, X_PI, Y):
+		prediction_results = predict(self.PI_model, [X_II, X_PI], Y)
+
+		return prediction_results
+
+	def train_II(self, X, Y):
+		train_results = train(self.II_model, X, Y)
+
+		return train_results
+
+	def test_II(self, X, Y):
+		test_results = test(self.II_model, X, Y)
+
+		return test_results
+
+	def predict_II(self, X, Y):
+		prediction_results = predict(self.II_model, X, Y)
+
+		return prediction_results
 
 	def feed_PI(self, X, Y, val_share=0.2):
 		split = int(X.shape[0]*val_share)
@@ -77,9 +95,18 @@ class BetaOne:
 def train(model, X, Y):
 	return model.fit(X, Y, verbose=0)
 
-
 def test(model, X, Y):
 	return model.evaluate(X, Y, verbose=0)
+
+def predict(model, X, Y):
+	predictions = model.predict(X)
+
+	correct_predictions = 0
+	for prediction, gt in zip(predictions, Y):
+		if gt[np.argmax(prediction)] == 1:
+			correct_predictions += 1
+
+	return correct_predictions/float(len(Y))
 
 
 class BetaZero:

@@ -3,8 +3,11 @@
 
 import numpy as np
 
-from hearts_helpers import eval_trick
+from hearts_helpers import *
 from constants import *
+
+
+I = 0
 
 class Node:
 	def __init__(self, state, values=None, i=0, p=0, trick=[]):
@@ -22,7 +25,6 @@ class Node:
 		self.iter_offset = (NUM_PLAYERS + self.i) * NUM_CARDS
 
 		self.cards = [c for c in range(NUM_CARDS) if self.state[self.player_offset+c] == 1]
-		#print self.cards
 		self.legal_cards = [c for c in self.cards if trick == [] or c//NUM_RANKS == trick[0]//NUM_RANKS] 
 		if self.legal_cards == []:
 			self.legal_cards = self.cards
@@ -32,7 +34,8 @@ class Node:
 		self.player_values = []
 		self.best_actions = None
 
-		self.X = None
+		self.X_II = None
+		self.X_PI = None
 		self.Y_actions = None
 		self.Y_values = None
 
@@ -41,15 +44,17 @@ class Node:
 
 	def solve(self):
 		for c in self.legal_cards:
-			sim_state, next_values, next_i, next_p, next_trick = self.sim_action(c)
+			sim_state = sim_action(self.state, self.p, c, self.i)
+			next_trick, next_values, next_p = eval_action(self.trick, self.values, self.p, c)
+			next_i = self.i+1
 
 			if next_i == NUM_CARDS:
 				assert(len(self.cards) == 1 and len(self.legal_cards) == 1)
 
 				self.best_actions = [0]
-
 				self.solved = True
-				return next_values, 0
+
+				return next_values, self.best_actions
 			else:
 				child = Node(sim_state, values=next_values, i=next_i, p=next_p, trick=next_trick)
 
@@ -60,56 +65,29 @@ class Node:
 			self.children_values.append(child_values)
 			self.player_values.append(child_values[self.p])
 
-
 		#TODO: train AI to predict the right actions
 
 
 		#return the outcome of the game if every player plays (the first) nash equilibrium
+		self.solved = True
 		self.best_actions = [a for a in range(len(self.legal_cards)) if self.player_values[a] == min(self.player_values)]
 
-		self.solved = True
 		return self.children_values[self.best_actions[0]], self.best_actions
-
-
-	def sim_action(self, c):
-		global PLAYERS
-
-		assert(self.state[self.player_offset+c] == 1)
-
-		sim_state = self.state.copy()
-		sim_state[self.player_offset+c] = 0
-
-		sim_state[self.iter_offset+c] = 1
-
-		next_values = self.values[:]
-		next_trick = self.trick[:]
-		next_trick.append(c)
-		next_p = (self.p+1) % NUM_PLAYERS
-
-		# after {#players} cards evaluate trick - determine winner - value
-		if len(self.trick)+1 == NUM_PLAYERS:
-			p_offset, trick_value = eval_trick(next_trick)
-			next_p = (next_p+p_offset) % NUM_PLAYERS
-			next_values[next_p] += trick_value
-			#"Durchmarsch"
-			if next_values[next_p] == MAX_VALUE:
-				for i in range(len(next_values)):
-					next_values[i] = MAX_VALUE
-				next_values[next_p] = 0
-			next_trick = []
-
-		return sim_state, next_values, self.i+1, next_p, next_trick
 
 	def build_training_samples(self):
 		assert(self.solved)
 
 		if (not self.training_samples):
-			X = self.state.reshape(1, self.state.shape[0])
+			II_input_state = self.state[II_MASKS[self.p]]
+			PI_input_state = self.state[np.logical_not(II_MASKS[self.p])]
+
+			X_II = II_input_state.reshape(1, II_input_state.shape[0])
+			X_PI = PI_input_state.reshape(1, PI_input_state.shape[0])
 			
-			# illeagal move --> 0 | legal move --> 0.5 | best moves --> 1.
+			# illegal move --> 0 | legal move --> 0.5 | best moves --> 1.
 			Y_actions = np.zeros((1, NUM_CARDS))
 			for c in self.legal_cards:
-				Y_actions[0, c] = 0.5
+				Y_actions[0, c] = 0
 			for a in self.best_actions:
 				Y_actions[0, self.legal_cards[a]] = 1.
 
@@ -117,18 +95,21 @@ class Node:
 
 			#accumulate training samples recursively
 			for child in self.children:
-				x, y_actions, y_values = child.build_training_samples()
-				X = np.concatenate((X, x), axis=0)
+				x_II, x_PI, y_actions, y_values = child.build_training_samples()
+
+				X_II = np.concatenate((X_II, x_II), axis=0)
+				X_PI = np.concatenate((X_PI, x_PI), axis=0)
 				Y_actions = np.concatenate((Y_actions, y_actions), axis=0)
 				Y_values = np.concatenate((Y_values, y_values), axis=0)
 
-			self.X = X
+			self.X_II = X_II
+			self.X_PI = X_PI
 			self.Y_actions = Y_actions
 			self.Y_values = Y_values
 
 			self.training_samples = True
 
-		return self.X, self.Y_actions, self.Y_values
+		return self.X_II, self.X_PI, self.Y_actions, self.Y_values
 
 	def __str__(self):
 		s = "P%i:\t%i"%(self.p, self.values[self.p]) 

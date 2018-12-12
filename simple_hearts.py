@@ -8,10 +8,9 @@ from random import shuffle, choice, random
 
 from tree import Node
 from beta_one import BetaZero, BetaOne
-from hearts_helpers import eval_trick, Player
+from hearts_helpers import *
 
 from constants import *
-
 
 
 AI = BetaOne()
@@ -20,31 +19,36 @@ PLAYERS = map(Player, PLAYER_NAMES[:NUM_PLAYERS])
 
 DECK = range(NUM_CARDS)
 
-GAME_STATE = np.zeros(NUM_CARDS * (NUM_PLAYERS + NUM_CARDS))
-
+GAME_STATE = np.zeros(GAME_STATE_SIZE)
+P = 0
+ITER = 0
+TRICK = []
+VALUES = [0]*NUM_PLAYERS
 
 def setup():
 	deal()
+	play_random((NUM_RANKS-4) * NUM_PLAYERS)
 	test_root = solve()
 	reset()
+	#test(test_root)
+	predict_II(test_root)
 
-	for game in range(10):
+	for game in range(1000):
 		#print "NEW GAME: "
 
 		deal()
+		play_random((NUM_RANKS-4) * NUM_PLAYERS)
 		root = solve()
-		#play()
-		train(root)
-		if game%10 == 0:
-			test(test_root)
+		train_II(root)
+		if game % 1 == 0:
+			#test(test_root)
+			predict_II(test_root)
 
 		reset()
 
 		#print 
 		#print "#########################################"
 		#print 
-
-
 
 
 def deal():
@@ -63,29 +67,55 @@ def deal():
 	#print_state(GAME_STATE)
 
 def solve():
-	root = Node(GAME_STATE.copy(), i=0, p=0)
+	root = Node(GAME_STATE.copy(), i=ITER, p=P)
 	root.solve()
 
 	return root
 
-def train(root):
-	X, Y_actions, Y_values = root.build_training_samples()
+def train_PI(root):
+	X_II, X_PI, Y_actions, Y_values = root.build_training_samples()
+	AI.train_PI(X_II, X_PI, Y_actions)
 
-	#print X.shape
-	#print Y_actions.shape
-	#print Y_values.shape
+def test_PI(test_root):
+	X_II_test, X_PI_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
+	print AI.test_PI(X_II_test, X_PI_test, Y_actions_test)
 
-	AI.train_PI(X, Y_actions)
+def predict_PI(test_root):
+	X_II_test, X_PI_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
+	print AI.predict_PI(X_II_test, X_PI_test, Y_actions_test)
 
-def test(test_root):
-	X_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
-	print AI.test_PI(X_test, Y_actions_test)
+
+def train_II(root):
+	X_II, _X_PI, Y_actions, Y_values = root.build_training_samples()
+	AI.train_II(X_II, Y_actions)
+
+def test_II(test_root):
+	X_II_test, _X_PI_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
+	print AI.test_II(X_II_test, Y_actions_test)
+
+def predict_II(test_root):
+	X_II_test, _X_PI_test, Y_actions_test, Y_values_test = test_root.build_training_samples()
+	print AI.predict_II(X_II_test, Y_actions_test)
+
+
+def play_random(iterations):
+	global GAME_STATE, P, ITER, TRICK, VALUES
+
+	#ASSERT playing from the start!!
+	iter_offset = (NUM_PLAYERS) * NUM_CARDS
+	assert(not np.any(GAME_STATE[iter_offset:]))
+
+	for ITER in range(1, iterations+1, 1):
+		c = PLAYERS[P].play_random(TRICK)
+		GAME_STATE = play_action(GAME_STATE, P, c, ITER)
+		TRICK, VALUES, P = eval_action(TRICK, VALUES, P, c)
+
+	#print_state()
 
 def play(exploitation=1.):
 	p = 0
 
 	for i in range(len(DECK)):
-		augmented_game_state = GAME_STATE[p*NUM_CARDS:(p+1)*NUM_CARDS]
 		if random() < exploitation:
 			#PI_features = AI.predict_features(augmented_game_state)
 			#predicted_features = AI.predict_features(augmented_game_state)
@@ -103,7 +133,7 @@ def play(exploitation=1.):
 
 
 def reset():
-	global GAME_STATE 
+	global GAME_STATE, P, ITER, TRICK, VALUES, PLAYERS
 
 	for p in PLAYERS:
 		p.reset()
@@ -111,9 +141,12 @@ def reset():
 	PLAYERS.append(PLAYERS.pop(0))
 
 	GAME_STATE = np.zeros(NUM_CARDS * (NUM_PLAYERS + NUM_CARDS))
+	P = 0
+	ITER = 0
+	TRICK = []
+	VALUES = [0]*NUM_PLAYERS
 
-
-def print_state(s):
+def print_state(s=None):
 	for p in PLAYERS:
 		print p
 

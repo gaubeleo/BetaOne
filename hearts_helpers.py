@@ -1,7 +1,49 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import numpy as np
+
+from random import choice
+
 from constants import *
+
+
+def play_action(state, p, c, i):
+	player_offset = p*NUM_CARDS
+	iter_offset = (NUM_PLAYERS + i) * NUM_CARDS
+
+	assert(state[player_offset+c] == 1)
+
+	sim_state = state.copy()
+	sim_state[player_offset+c] = 0
+
+	sim_state[iter_offset+c] = 1
+
+	return sim_state
+
+def sim_action(state, p, c, i):
+	return play_action(state.copy(), p, c, i)
+
+
+def eval_action(trick, values, p, c):
+	next_values = values[:]
+	next_trick = trick[:]
+	next_trick.append(c)
+	next_p = (p+1) % NUM_PLAYERS
+
+	# after {#players} cards evaluate trick - determine winner - value
+	if len(next_trick) == NUM_PLAYERS:
+		p_offset, trick_value = eval_trick(next_trick)
+		next_p = (next_p+p_offset) % NUM_PLAYERS
+		next_values[next_p] += trick_value
+		#"Durchmarsch"
+		if next_values[next_p] == MAX_VALUE:
+			for i in range(len(next_values)):
+				next_values[i] = MAX_VALUE
+			next_values[next_p] = 0
+		next_trick = []
+
+	return next_trick, next_values, next_p
 
 
 def eval_trick(trick):
@@ -21,6 +63,9 @@ def eval_trick(trick):
 	return winner, trick_value
 
 
+def conceal_state(s, p):
+	return np.concatenate((s[p*NUM_CARDS:(p+1)*NUM_CARDS], s[NUM_PLAYERS*NUM_CARDS:]), axis=0)
+
 
 class Player:
 	def __init__(self, name):
@@ -33,43 +78,24 @@ class Player:
 	def reset(self):
 		self.value = 0
 		self.cards = []
-		self.played = []
+		self.played_cards = []
 
 	def sort(self):
 		sorted(self.cards)
 
-	def play(self, force_suit=None):
-		#return self.cards.pop(0)
-		legal_moves = [CARDS.index(c) for c in self.cards]
-		if force_suit:
-			if force_suit == trumpf_suit:
-				legal_moves = [CARDS.index(c) for c in self.cards if c[0] in [u"U", u"O"] or c[1] == force_suit]
-			else:
-				legal_moves = [CARDS.index(c) for c in self.cards if c[0] not in [u"U", u"O"] and c[1] == force_suit]
+	def play_random(self, trick):
+		assert(self.cards != [])
 
-		if not legal_moves:
-			legal_moves = [CARDS.index(c) for c in self.cards]
+		legal_cards = [c for c in self.cards if trick == [] or c//NUM_RANKS == trick[0]//NUM_RANKS] 
+		if legal_cards == []:
+			legal_cards = self.cards
 
-		#calc reward since last move and update Q-function
-		if self.last_state != None:
-			reward = self.value-self.last_value
-			self.ai.updateQ(self.last_state, self.state, self.last_action, reward)
+		c = choice(legal_cards)
+		self.cards.remove(c)
 
-		# choose action
-		self.action = np.zeros(32)
-		if random() < exploit:
-			i = choice(legal_moves)
-		else:
-			best_moves = self.ai.get_best_action(state)
-			best_legal_moves = [i for i in best_moves if i in legal_moves]
-			i = choice(best_legal_moves)	
-		self.action[CARDS.index(self.cards[i])] = 1
+		self.played_cards.append(c)
 
-		self.last_state = self.state.copy()
-		self.last_action = self.action.copy()
-		self.last_value = self.value
-
-		return self.cards.pop(i)
+		return c
 
 	def __str__(self):
-		return self.name + ":\t" + str(self.value) + "\t|\t{" + " ".join([CARDS[c] for c in self.cards]) + "}\t|\t" + " ".join([CARDS[c] for c in self.played])
+		return self.name + ":\t" + str(self.value) + "\t|\t{" + " ".join([CARDS[c] for c in self.cards]) + "}\t|\t" + " ".join([CARDS[c] for c in self.played_cards])
